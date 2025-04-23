@@ -1,0 +1,152 @@
+import ij.IJ;
+import ij.ImageStack;
+import org.fairsim.fiji.DisplayWrapper;
+import org.fairsim.linalg.Vec2d;
+import org.fairsim.sim_algorithm.OtfProvider;
+import org.fairsim.sim_algorithm.SimAlgorithm;
+import org.fairsim.sim_algorithm.SimParam;
+import org.fairsim.sim_algorithm.SimUtils;
+import org.fairsim.utils.ImageDisplay;
+import org.fairsim.utils.Tool;
+
+// to see output in the Fiji log
+Tool.setLogger(new Tool.Logger() {
+    public void writeTrace(String w) {
+        IJ.log("-fs- " + w);
+    }
+    public void writeError(String e) {
+        IJ.log("fs ERR: " + e);
+    }
+    public void writeShortMessage(String s) {
+        IJ.showStatus(s);
+    }
+});
+
+// to generate intermediate output
+ImageDisplay.Factory idf = DisplayWrapper.getFactory();
+
+// Function to assess parameter estimation quality
+void assessParameterQuality(SimParam simParam) {
+    boolean paramFitFailed = false;
+
+    IJ.log("Assessing parameter fit...");
+
+    for (int ang = 0; ang < simParam.nrDir(); ang++) {
+        double modulation = simParam.dir(ang).getRawModulations()[simParam.nrBand() - 1];
+        double estimatedImprovement = simParam.dir(ang).getEstResImprovement();
+        IJ.log("Direction " + ang + ": Modulation = " + modulation + ", Estimated Resolution Improvement = " + estimatedImprovement);
+
+        // Assess the quality
+        if (modulation >= 0.7) {
+            IJ.log("Assessment: Good fit.");
+        } else if (modulation >= 0.5) {
+            IJ.log("Assessment: Usable fit.");
+        } else if (modulation >= 0.3) {
+            IJ.log("Assessment: Weak fit.");
+        } else if (modulation >= 0.1) {
+            IJ.log("Assessment: Very low fit.");
+            paramFitFailed = true;
+        } else {
+            IJ.log("Assessment: No fit!");
+            paramFitFailed = true;
+        }
+    }
+
+    if (paramFitFailed) {
+        IJ.log("Parameter fitting likely failed. Check alignment and signal quality.");
+    } else {
+        IJ.log("Parameter fitting completed successfully.");
+    }
+}
+
+// set some reconstruction parameters
+int nrBands = 2; // #SIM bands
+int nrAng = 3; // #angles
+int nrPha = 3; // #phases
+
+int imgSize = 502; // width & height of image
+double pxlSize = 0.0626; // pixel size in micron
+
+double emWavelen = 488; // emission wavelength in nm
+double otfNA = 1.35; // NA
+double otfCorr = 0.3; // compensation // 0,15 means it is letting most of the nois pass. for AI this is infotmation
+
+double background = 0.04; // background subtraction
+
+int fitBand = 1; // fit against 1th or 2nd band (1th: more robust, 2nd: more precise)
+
+int visualFeedback = 1; // amount of visual feedback, -1 (off) to 2 (all)
+
+boolean coarsePeakFit = true; // if to run the coarse k0, peak fit
+double fitExclude = 0.8; // freq. region (DC) to ignore when search for k0, in fraction of OTF cutoff // 0.95 is good as it has no noise.
+
+boolean otfBeforeShift = true; // if to apply the OTF before or after shifting the band
+
+
+
+// get the current stack
+ImageStack iSt = ij.WindowManager.getCurrentImage().getStack();
+
+if (iSt.size() != nrAng * nrPha ) {
+	Tool.error("ang*pha = stack length",true);
+	return;
+}
+
+// copy raw data, window, fft
+Vec2d.Cplx [][] rawImages = new Vec2d.Cplx[nrAng][nrPha];
+
+for (int a = 0; a<nrAng; a++) {
+	for (int p=0; p<nrPha; p++) {
+
+		// get the current image as 16bit short
+		short [] curImg = (short[])iSt.getProcessor( a*nrPha + p + 1 ).convertToShortProcessor().getPixels();
+
+		// copy to a complex-value vector
+		rawImages[a][p] = Vec2d.createCplx( imgSize, imgSize );
+		rawImages[a][p].setFrom16bitPixels( curImg );
+
+		// subtract background, window, fft
+		double pc = SimUtils.subtractBackground( rawImages[a][p], background );
+
+		SimUtils.fadeBorderCos( rawImages[a][p], 15);
+		rawImages[a][p].fft2d(false);
+
+		Tool.trace("fft'd input "+a+" "+p+", subtracted background, % pixels clipped: "+pc*100);
+	}
+}
+
+// setup OTF and SIM parameters. Both of these could be loaded from an xml file!
+OtfProvider otf   = OtfProvider.fromEstimate( otfNA, emWavelen, otfCorr );
+SimParam simParam = SimParam.create( nrBands, nrAng, nrPha, imgSize, pxlSize, otf );
+
+// run the parameter fit
+if (coarsePeakFit) {
+
+	SimAlgorithm.estimateParameters( simParam, rawImages, fitBand, fitExclude, idf, visualFeedback, null);
+	assessParameterQuality(simParam);
+} else {
+
+	// if we run w/o coarse peak fit, we need to set some starting guess for k0
+	// thse values fit the OXM green datasets
+	simParam.dir(0).setPxPy( 137.44, -140.91);
+    simParam.dir(1).setPxPy( -52.8,  -189.5);
+    simParam.dir(2).setPxPy( 190.08,  49.96);
+
+	SimAlgorithm.estimateParameters( simParam, rawImages, fitBand, -1, idf, visualFeedback, null);
+
+}
+
+// run the reconstruction
+simParam.setWienerFilter( 0.03 );   // wiener filter parameter  // 0.2 to 0.4 is good.
+simParam.setApoCutoff( 2.0 );       // cutoff of apodization // 2.2 is better for the AI image. 2.4 can be used as well. resouldation gain
+simParam.setApoBend( 0.7 );         // exponent of apodization  // this is a good number. can cause artifacts
+
+otf.setAttenuation( 0.995, 1.2 );   // set strength (0..1) and FWHM (in 1/micron) of OTF attenuation
+otf.switchAttenuation( true );      // important: has to be 'true', otherwise no attenuation gets used
+
+Vec2d.Real result = SimAlgorithm.runReconstruction( simParam, rawImages, idf, -1,
+	otfBeforeShift, SimParam.CLIPSCALE.CLIP, null);
+
+// 'result' now contains the reconstructed image. The reason you also see an image on screen is
+// that the visualisation feature (passing 'idf' and 'visualFeedback') is turned on
+float [] res = result.vectorData();

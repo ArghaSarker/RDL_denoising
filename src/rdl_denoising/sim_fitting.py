@@ -1,7 +1,8 @@
 import numpy as np
 import numpy.fft as F
-from read_otf import read_otf
 from scipy.interpolate import interp1d
+
+from rdl_denoising.read_otf import read_otf
 
 
 def make_matrix(nphases, norders):

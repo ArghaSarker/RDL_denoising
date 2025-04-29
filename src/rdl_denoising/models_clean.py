@@ -713,8 +713,8 @@ class Train_RDL_Denoising(tf.keras.Model):
             mode="min",  # We want to minimize validation loss
             restore_best_weights=True,  # Restore model weights from the epoch with the best validation loss
         )
-        with tf.device("/GPU:0"):
-            sr_y_predict = self.srmodel.predict(x)
+        # with tf.device("/GPU:0"):
+        sr_y_predict = self.srmodel.predict(x)
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
 
         # we have to normalize the SR data
@@ -918,8 +918,8 @@ class Train_RDL_Denoising(tf.keras.Model):
         # channels_val = x_val.shape[-1]
         x_val, y_val = data_val
         # this part is for validation data
-        with tf.device("/GPU:0"):
-            sr_y_predict_val = self.srmodel.predict(x_val)
+        # with tf.device("/GPU:0"):
+        sr_y_predict_val = self.srmodel.predict(x_val)
         sr_y_predict_val = tf.squeeze(
             sr_y_predict_val, axis=-1
         )  # Batch, Ny, Nx, 1
@@ -1039,75 +1039,73 @@ class Train_RDL_Denoising(tf.keras.Model):
 
         strategy = tf.distribute.MirroredStrategy()
         print("Number of GPUs used:", strategy.num_replicas_in_sync)
-        with strategy.scope():
+        # with strategy.scope():
 
-            # self.denmodel.fit([input_MPE_batch_new_reshape, input_PFE_batch_new_reshape], gt_batch_new_reshape , validation_data = val_data, batch_size=self.batch_size,
-            #                     epochs=self.epochs, shuffle=True, verbose = True,
-            #                     callbacks=[lrate, hrate, srate, early_stopping, tensorboard_callback])
-            # print('saving the  trained DN model')
-            # print('model summary')
-            new_denmodel = Denoiser((self.Ny, self.Nx, self.nphases))
+        # self.denmodel.fit([input_MPE_batch_new_reshape, input_PFE_batch_new_reshape], gt_batch_new_reshape , validation_data = val_data, batch_size=self.batch_size,
+        #                     epochs=self.epochs, shuffle=True, verbose = True,
+        #                     callbacks=[lrate, hrate, srate, early_stopping, tensorboard_callback])
+        # print('saving the  trained DN model')
+        # print('model summary')
+        new_denmodel = Denoiser((self.Ny, self.Nx, self.nphases))
 
-            # Compile the new model with the same loss and optimizer
-            new_denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
+        # Compile the new model with the same loss and optimizer
+        new_denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
 
-            # Load the original weights into the new model
-            new_denmodel.set_weights(original_weights)
-            print()
-            print("this is being feed into actual model trainng")
-            print(
-                f"input_MPE_batch_new_reshape shape: {input_MPE_batch_new_reshape.shape}"
-            )
-            print(
-                f"input_PFE_batch_new_reshape shape: {input_PFE_batch_new_reshape.shape}"
-            )
-            print(f"gt_batch_new_reshape shape: {gt_batch_new_reshape.shape}")
-            print()
-            print()
-            print(f"val_data shape: {val_data[0][0].shape}")
-            print(f"val_data shape: {val_data[0][1].shape}")
-            print(f"val_data shape: {val_data[1].shape}")
+        # Load the original weights into the new model
+        new_denmodel.set_weights(original_weights)
+        print()
+        print("this is being feed into actual model trainng")
+        print(
+            f"input_MPE_batch_new_reshape shape: {input_MPE_batch_new_reshape.shape}"
+        )
+        print(
+            f"input_PFE_batch_new_reshape shape: {input_PFE_batch_new_reshape.shape}"
+        )
+        print(f"gt_batch_new_reshape shape: {gt_batch_new_reshape.shape}")
+        print()
+        print()
+        print(f"val_data shape: {val_data[0][0].shape}")
+        print(f"val_data shape: {val_data[0][1].shape}")
+        print(f"val_data shape: {val_data[1].shape}")
 
-            print()
-            try:
-                gpus = tf.config.list_physical_devices("GPU")
-                print(f"gpu information: {gpus}")
-                if gpus:
-                    for gpu in gpus:
-                        mem_info = tf.config.experimental.get_memory_info(
-                            gpu.name
-                        )
-                        allocated = mem_info.get("current", 0) / (1024**3)
-                        peak = mem_info.get("peak", 0) / (1024**3)
-                        print(
-                            f"GPU {gpu.name}: Allocated Memory = {allocated:.2f} GB, Peak Memory = {peak:.2f} GB"
-                        )
-                else:
-                    print("No GPUs found.")
-            except Exception as e:
-                print("Could not retrieve GPU memory info:", e)
-            # Train the new model on multiple GPUs
-            new_denmodel.fit(
-                [input_MPE_batch_new_reshape, input_PFE_batch_new_reshape],
-                gt_batch_new_reshape,
-                validation_data=val_data,
-                batch_size=self.batch_size,
-                epochs=self.epochs,
-                shuffle=True,
-                verbose=True,
-                callbacks=[
-                    lrate,
-                    hrate,
-                    srate,
-                    early_stopping,
-                    tensorboard_callback,
-                ],
-            )
+        print()
+        try:
+            gpus = tf.config.list_physical_devices("GPU")
+            print(f"gpu information: {gpus}")
+            if gpus:
+                for gpu in gpus:
+                    mem_info = tf.config.experimental.get_memory_info(gpu.name)
+                    allocated = mem_info.get("current", 0) / (1024**3)
+                    peak = mem_info.get("peak", 0) / (1024**3)
+                    print(
+                        f"GPU {gpu.name}: Allocated Memory = {allocated:.2f} GB, Peak Memory = {peak:.2f} GB"
+                    )
+            else:
+                print("No GPUs found.")
+        except Exception as e:
+            print("Could not retrieve GPU memory info:", e)
+        # Train the new model on multiple GPUs
+        new_denmodel.fit(
+            [input_MPE_batch_new_reshape, input_PFE_batch_new_reshape],
+            gt_batch_new_reshape,
+            validation_data=val_data,
+            batch_size=self.batch_size,
+            epochs=self.epochs,
+            shuffle=True,
+            verbose=True,
+            callbacks=[
+                lrate,
+                hrate,
+                srate,
+                early_stopping,
+                tensorboard_callback,
+            ],
+        )
 
-            # Step 4: Update the original model's weights with the trained weights
-            self.denmodel.set_weights(new_denmodel.get_weights())
+        # Step 4: Update the original model's weights with the trained weights
+        self.denmodel.set_weights(new_denmodel.get_weights())
 
-            self.denmodel.save(self.den_model_dir)
+        self.denmodel.save(self.den_model_dir)
         # self.denmodel.save(self.den_model_dir)
         print("model has been saved")
 
@@ -1120,8 +1118,8 @@ class Train_RDL_Denoising(tf.keras.Model):
         input_height = x.shape[1]
         input_width = x.shape[2]
         # channels = x.shape[-1]
-        with tf.device("/GPU:0"):
-            sr_y_predict = self.srmodel.predict(x)
+        # with tf.device("/GPU:0"):
+        sr_y_predict = self.srmodel.predict(x)
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
 
         # we have to normalize the SR data
@@ -1162,12 +1160,12 @@ class Train_RDL_Denoising(tf.keras.Model):
                 list_image_SR.append(img_SR)
                 # image_gt = y[i:i+1][0]
                 cur_k0, cur_k0_angle, modamp = self._get_cur_k(image_gt=img_in)
-                print()
-                print("comming out of prediction branch")
-                print(
-                    f"cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}"
-                )
-                print()
+                # print()
+                # print("comming out of prediction branch")
+                # print(
+                #     f"cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}"
+                # )
+                # print()
                 # print(f'img_SR before phase computation {img_SR.shape}')
                 # img_gen, gen_pattern, pattrned_img_fft_save
                 # img_gen, gen_pattern, pattrned_img_fft_save = self._phase_computation(img_SR, modamp, cur_k0_angle, cur_k0)

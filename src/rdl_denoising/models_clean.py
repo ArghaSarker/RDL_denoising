@@ -644,10 +644,6 @@ class Train_RDL_Denoising(tf.keras.Model):
             sr_y_predict_val, axis=-1
         )  # Batch, Ny, Nx, 1
 
-        # we have to normaliez the sr data
-        # sr_y_predict_val = normalize(sr_y_predict_val)
-
-        # list stays out of the loop
         list_image_gen_val = []
         list_image_in_val = []
         list_image_gt_val = []
@@ -737,6 +733,7 @@ class Train_RDL_Denoising(tf.keras.Model):
         ], gt_batch_val_new_reshape
 
         def plot_batches_only(input_MPE_batch, input_PFE_batch, gt_batch):
+
             num_batches = input_MPE_batch.shape[0]
             random_indices = np.random.choice(num_batches, 5, replace=False)
 
@@ -891,8 +888,7 @@ class Train_RDL_Denoising(tf.keras.Model):
                     - prediction: numpy array of shape (1, 128, 128, 3)
 
                     """
-                    # Step 1: Remove the batch dimension to get shape (128, 128, 3)
-                    # print(f'this is the orediction received : {prediction.shape}')
+
                     img = np.squeeze(prediction, axis=0)
                     # img_g = np.transpose(prediction, (1,2,0))
                     img_g = img

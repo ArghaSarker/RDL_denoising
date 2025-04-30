@@ -1,10 +1,7 @@
-import os
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.fft as F
-import psutil
 import tensorflow as tf
 import tifffile
 from csbdeep.utils import normalize
@@ -25,225 +22,25 @@ from tqdm import tqdm
 
 from rdl_denoising.sim_fitting import cal_modamp, get_otf
 
-
-def print_memory_usage():
-    process = psutil.Process(os.getpid())  # Get the current Python process
-    memory_info = (
-        process.memory_info()
-    )  # Get memory usage details for this process
-    print()
-    print(
-        "----------------------------->>       Process Memory Usage       <<-----------------------------"
-    )
-    print(f"RSS (Resident Set Size): {memory_info.rss / (1024 ** 3):.2f} GB")
-    print(f"VMS (Virtual Memory Size): {memory_info.vms / (1024 ** 3):.2f} GB")
-    print(
-        f"Shared Memory: {memory_info.shared / (1024 ** 3):.2f} GB"
-        if memory_info.shared
-        else "N/A"
-    )
-    print(f"Data Memory: {memory_info.data / (1024 ** 3):.2f} GB")
-    print(f"Text Memory: {memory_info.text / (1024 ** 3):.2f} GB")
-    print()
-
-
-# def GlobalAveragePooling(input):
-#     return tf.reduce_mean(input, axis=(1, 2, 3), keepdims=True)
-
-
-# def CALayer(input, channel, reduction=16):
-#     W = Lambda(GlobalAveragePooling)(input)
-#     W = Conv3D(
-#         channel // reduction, kernel_size=1, activation="relu", padding="same"
-#     )(W)
-#     W = Conv3D(channel, kernel_size=1, activation="sigmoid", padding="same")(W)
-#     mul = multiply([input, W])
-#     return mul
-
-
-# def global_average_pooling(input):
-#     return tf.reduce_mean(input, axis=(1, 2), keepdims=True)
-
-
-# def FCALayer(input, channel, reduction=16):
-#     absfft1 = Lambda(fft2)(input)
-#     absfft1 = Lambda(fftshift)(absfft1)
-
-#     absfft1 = tf.abs(absfft1, name="absfft1")
-#     absfft1 = tf.cast(absfft1, dtype=tf.float32)
-#     # the fftshit are are  not resized as the original code: it throughs lambda error.
-#     # output = tf.image.resize(output, (128, 128)) # this line is not there into the ffshift output
-
-
-#     absfft2 = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         activation="relu",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(absfft1)
-#     absfft2 = LayerNormalization()(absfft2)
-#     W = Lambda(global_average_pooling)(absfft2)
-#     W = Conv2D(
-#         channel // reduction,
-#         kernel_size=1,
-#         activation="relu",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(W)
-#     W = LayerNormalization()(W)
-#     W = Conv2D(
-#         channel,
-#         kernel_size=1,
-#         activation="sigmoid",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(W)
-#     mul = multiply([input, W])
-#     return mul
-
-
-# def FCAB(input, channel):
-#     conv = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(input)
-#     conv = Lambda(gelu)(conv)
-#     conv = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(conv)
-#     conv = Lambda(gelu)(conv)
-#     att = FCALayer(conv, channel, reduction=16)
-#     output = add([att, input])
-#     return output
-
-
-# def ResidualGroup(input, channel):
-#     conv = input
-#     n_RCAB = 4
-#     for _ in range(n_RCAB):
-#         conv = FCAB(conv, channel)
-#     conv = add([conv, input])
-#     return conv
-
-
-# def gelu(x):
-#     cdf = 0.5 * (1.0 + tf.math.erf(x / tf.sqrt(2.0)))
-#     return x * cdf
-
-
-# def DFCAN(input_shape, scale=2):
-#     inputs = Input(input_shape)
-#     conv = Conv2D(
-#         64,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(inputs)
-#     conv = Lambda(gelu)(conv)
-#     n_ResGroup = 4
-#     for _ in range(n_ResGroup):
-#         conv = ResidualGroup(conv, channel=64)
-#     conv = Conv2D(
-#         64 * (scale**2),
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(conv)
-#     conv = Lambda(gelu)(conv)
-
-#     upsampled = Lambda(pixelshuffle, arguments={"scale": scale})(conv)
-#     conv = Conv2D(
-#         1,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(upsampled)
-#     output = Activation("sigmoid")(conv)
-#     model = Model(inputs=inputs, outputs=output)
-#     return model
-
-
-# def apodize2d(img, napodize=10):
-#     bs, ny, nx, ch = img.get_shape().as_list()
-#     img_apo = img[:, napodize : ny - napodize, :, :]
-
-#     imageUp = img[:, 0:napodize, :, :]
-#     imageDown = img[:, ny - napodize :, :, :]
-#     diff = (imageDown[:, -1::-1, :, :] - imageUp) / 2
-#     l = np.arange(napodize)
-#     fact_raw = 1 - np.sin((l + 0.5) / napodize * np.pi / 2)
-#     fact = fact_raw[np.newaxis, :, np.newaxis, np.newaxis]
-#     fact = tf.convert_to_tensor(fact, dtype=tf.float32)
-#     fact = tf.tile(fact, [tf.shape(img)[0], 1, nx, ch])
-#     factor = diff * fact
-#     imageUp = tf.add(imageUp, factor)
-#     imageDown = tf.subtract(imageDown, factor[:, -1::-1, :, :])
-#     img_apo = tf.concat([imageUp, img_apo, imageDown], axis=1)
-
-#     imageLeft = img_apo[:, :, 0:napodize, :]
-#     imageRight = img_apo[:, :, nx - napodize :, :]
-#     img_apo = img_apo[:, :, napodize : nx - napodize, :]
-#     diff = (imageRight[:, :, -1::-1, :] - imageLeft) / 2
-#     fact = fact_raw[np.newaxis, np.newaxis, :, np.newaxis]
-#     fact = tf.convert_to_tensor(fact, dtype=tf.float32)
-#     fact = tf.tile(fact, [tf.shape(img)[0], ny, 1, ch])
-#     factor = diff * fact
-#     imageLeft = tf.add(imageLeft, factor)
-#     imageRight = tf.subtract(imageRight, factor[:, :, -1::-1, :])
-#     img_apo = tf.concat([imageLeft, img_apo, imageRight], axis=2)
-
-#     return img_apo
-
-
-# def pixelshuffle(layer_in, scale):
-#     return tf.nn.depth_to_space(
-#         layer_in, block_size=scale
-#     )  # here I changes :  block_size=scale :  to :  block_size=2*scale  :
-
-
-# def fft2(input):
-#     input = apodize2d(input, napodize=10)  # the apodization has been added
-#     temp = K.permute_dimensions(input, (0, 3, 1, 2))
-#     fft = tf.signal.fft2d(tf.complex(temp, tf.zeros_like(temp)))
-#     absfft = tf.pow(
-#         tf.abs(fft) + 1e-8, 0.1
-#     )  # this is Gamma operation to enhance the contribution of high frequency contribution.
-#     output = K.permute_dimensions(absfft, (0, 2, 3, 1))
-#     return output
-
-
-# def fft2(input):
-#     temp = K.permute_dimensions(input, (0, 3, 1, 2))
-#     fft = tf.signal.fft2d(tf.complex(temp, tf.zeros_like(temp)))
-#     output = K.permute_dimensions(fft, (0, 2, 3, 1))
-#     return output
-
-
-# def fftshift(input):
-#     bs, h, w, ch = input.get_shape().as_list()
-#     fs11 = input[:, -h // 2 : h, -w // 2 : w, :]
-#     fs12 = input[:, -h // 2 : h, 0 : w // 2, :]
-#     fs21 = input[:, 0 : h // 2, -w // 2 : w, :]
-#     fs22 = input[:, 0 : h // 2, 0 : w // 2, :]
-#     output = tf.concat(
-#         [tf.concat([fs11, fs21], axis=1), tf.concat([fs12, fs22], axis=1)],
-#         axis=2,
+# def print_memory_usage():
+#     process = psutil.Process(os.getpid())  # Get the current Python process
+#     memory_info = (
+#         process.memory_info()
+#     )  # Get memory usage details for this process
+#     print()
+#     print(
+#         "----------------------------->>       Process Memory Usage       <<-----------------------------"
 #     )
-#     # Handle real and imaginary parts separately
-#     real_part = tf.image.resize(tf.math.real(output), (128, 128))
-#     imag_part = tf.image.resize(tf.math.imag(output), (128, 128))
-
-#     # Combine resized real and imaginary parts
-#     output = tf.complex(real_part, imag_part)
-
-#     # output = tf.image.resize(output, (128, 128)) # to have a constant sampling
-#     return output
+#     print(f"RSS (Resident Set Size): {memory_info.rss / (1024 ** 3):.2f} GB")
+#     print(f"VMS (Virtual Memory Size): {memory_info.vms / (1024 ** 3):.2f} GB")
+#     print(
+#         f"Shared Memory: {memory_info.shared / (1024 ** 3):.2f} GB"
+#         if memory_info.shared
+#         else "N/A"
+#     )
+#     print(f"Data Memory: {memory_info.data / (1024 ** 3):.2f} GB")
+#     print(f"Text Memory: {memory_info.text / (1024 ** 3):.2f} GB")
+#     print()
 
 
 def CALayer2D(input, input_height, input_width, channel, reduction=16):
@@ -505,8 +302,7 @@ class Train_RDL_Denoising(tf.keras.Model):
 
         phase_list = -np.angle(modamp)
         img_gen = []
-        # gen_pattern = []
-        # pattrned_img_fft_save = []
+
         for d in range(self.ndirs):
             alpha = cur_k0_angle[d]
 
@@ -516,12 +312,6 @@ class Train_RDL_Denoising(tf.keras.Model):
                 kxR = -cur_k0[d] * np.pi * np.cos(alpha)
                 kyR = -cur_k0[d] * np.pi * np.sin(alpha)
                 phOffset = phase_list[d] + i * self.phase_space
-
-                # print()
-                # print(
-                #     f"kxL: {kxL} kyL: {kyL} kxR: {kxR} kyR: {kyR} phOffset: {phOffset}"
-                # )
-                # print()
                 interBeam = np.exp(
                     1j * (kxL * self.X + kyL * self.Y + phOffset)
                 ) + np.exp(1j * (kxR * self.X + kyR * self.Y))
@@ -543,7 +333,6 @@ class Train_RDL_Denoising(tf.keras.Model):
 
         img_gen = np.asarray(img_gen)
 
-        # return img_gen, gen_pattern, pattrned_img_fft_save
         return img_gen
 
     def _get_cur_k(self, image_gt):
@@ -572,14 +361,6 @@ class Train_RDL_Denoising(tf.keras.Model):
 
         return cur_k0, cur_k0_angle, modamp
 
-    # def reshape_to_3_channels(self, batch):
-
-    #     B, H, W, C = batch.shape
-    #     #print(f'B: {B} , H: {H}, W: {W} , C: {C} ')
-    #     assert C % self.ndirs == 0, "The last dimension must be divisible by 3"
-    #     new_batch_size = B * (C // self.ndirs)
-    #     return batch.reshape(new_batch_size, H, W, self.nphases)
-
     def reshape_to_3_channels(self, batch):
         print()
         print("reshape_to_3_channels data received")
@@ -594,49 +375,13 @@ class Train_RDL_Denoising(tf.keras.Model):
         )
         return batch.reshape(new_batch_size, H, W, self.nphases)
 
-    # def reshape_back_from_3_channels(self, batch):
-    #     B, H, W, C = batch.shape
-    #     assert C == self.nphases, "The last dimension must be equal to the number of phases"
-    #     original_batch_size = B // (self.ndirs * self.nphases / C)
-    #     return batch.reshape(int(original_batch_size), H, W, int(self.ndirs * self.nphases))
-
-    # def reshape_channels(self, array):
-    #     """
-    #     Reshapes an array of shape (m, 128, 128, 9) to (m * 3, 128, 128, 3).
-
-    #     Parameters:
-    #     - array: numpy array of shape (m, 128, 128, 9)
-
-    #     Returns:
-    #     - reshaped array of shape (m * 3, 128, 128, 3)
-    #     """
-    #     print(f'from reshape_channels:received:  {array.shape}')
-    #     # Check if the input array has the correct number of channels (9)
-    #     if array.shape[-1] != 9:
-    #         raise ValueError("The last dimension must be 9 channels.")
-
-    #     # Step 1: Reshape from (m, 128, 128, 9) to (m, 128, 128, 3, 3)
-    #     reshaped = array.reshape(array.shape[0], 128, 128, 3, 3)
-
-    #     # Step 2: Transpose to swap the 3rd and 4th axes and reshape to (m * 3, 128, 128, 3)
-    #     reshaped = reshaped.transpose(0, 3, 1, 2, 4).reshape(-1, 128, 128, 3)
-    #     print(f'from reshape_channels: {reshaped.shape}')
-
-    #     return reshaped
-
     def reshape_to_9_channels(self, batch):
 
-        # print(f'batch shape: reshape_to_9_channels  {batch.shape}')
-
         B, H, W, C = batch.shape
-        # print(f'B: {B} , H: {H}, W: {W} , C: {C} ')
 
         new_batch_size = int(B / (self.ndirs * self.nphases / C))
-        # print(f' new_batch_size : { new_batch_size} B: {B} , H: {H}, W: {W} , C: {C} ')
-        return batch.reshape(new_batch_size, H, W, self.ndirs * self.nphases)
 
-    # def min_max_normalize(self, img):
-    #         return (img - np.min(img)) / (np.max(img) - np.min(img))
+        return batch.reshape(new_batch_size, H, W, self.ndirs * self.nphases)
 
     def plot_batch_images(self, pattern_batch, filename="output.png"):
         """
@@ -681,14 +426,10 @@ class Train_RDL_Denoising(tf.keras.Model):
         x, y = data
         x_val, y_val = data_val
 
-        # pre-process for train data
-        # input_height = x.shape[1]
-        # input_width = x.shape[2]
-        # channels = x.shape[-1]
         tensorboard_callback = callbacks.TensorBoard(
             log_dir=self.log_dir, histogram_freq=1
         )
-        # lrate = callbacks.ReduceLROnPlateau(monitor='loss', factor=0.1, patience=4, verbose=1)
+
         lrate = callbacks.ReduceLROnPlateau(
             monitor="val_loss",
             factor=0.5,  # here is teh change
@@ -715,11 +456,8 @@ class Train_RDL_Denoising(tf.keras.Model):
             restore_best_weights=True,  # Restore model weights from the epoch with the best validation loss
         )
         # with tf.device("/GPU:0"):
-        sr_y_predict = self.srmodel.predict(x)
+        sr_y_predict = normalize(self.srmodel.predict(x))
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
-
-        # we have to normalize the SR data
-        # sr_y_predict = normalize(sr_y_predict)
 
         print(f"sr predcitec inside train {sr_y_predict.shape}")
 
@@ -731,10 +469,6 @@ class Train_RDL_Denoising(tf.keras.Model):
         num_batches = int(
             np.ceil(x.shape[0] / batch_size_for_data_pre_process)
         )
-        print()
-        print()
-        print("before the bacth preprocessing startes on the training data")
-        print_memory_usage()
 
         # Process data in batches with a progress bar
         for batch_idx in tqdm(
@@ -751,23 +485,14 @@ class Train_RDL_Denoising(tf.keras.Model):
             y_batch = y[start_idx:end_idx]
             sr_y_predict_batch = sr_y_predict[start_idx:end_idx]
 
-            print()
-            print(
-                "before each mini batch startes for training data pre processing"
-            )
-            print_memory_usage()
-            print()
-
             for i in range(x_batch.shape[0]):
-                # for batch_idx in tqdm(range(num_batches), desc="Processing batches"):
+
                 img_in = x_batch[i : i + 1][0]
-                # image_in_ori = x[i:i+1][0]
-                # list_image_input_ori.append(image_in_ori)
+
                 img_SR = sr_y_predict_batch[i : i + 1][0]
-                # print(f'this is teh shape of img sr inside loop: {img_SR.shape}')
+
                 image_gt = y_batch[i : i + 1][0]
-                # image_gt_ori = y[i:i+1][0]
-                # print(f'inside fit, tis is what I am ffeeding inside gte_vur_k {image_gt.shape}')
+
                 cur_k0, cur_k0_angle, modamp = self._get_cur_k(
                     image_gt=image_gt
                 )
@@ -812,12 +537,6 @@ class Train_RDL_Denoising(tf.keras.Model):
                 list_image_gt.append(
                     image_gt
                 )  # ----> being append to the list outside of bathing for loop
-            print()
-            print(
-                "after each batch pre processing training data pre processing ---> Memory requirement"
-            )
-            print_memory_usage()
-            print()
 
         input_MPE_batch = np.asarray(list_image_gen)
         input_PFE_batch = np.asarray(list_image_in)
@@ -920,7 +639,7 @@ class Train_RDL_Denoising(tf.keras.Model):
         x_val, y_val = data_val
         # this part is for validation data
         # with tf.device("/GPU:0"):
-        sr_y_predict_val = self.srmodel.predict(x_val)
+        sr_y_predict_val = normalize(self.srmodel.predict(x_val))
         sr_y_predict_val = tf.squeeze(
             sr_y_predict_val, axis=-1
         )  # Batch, Ny, Nx, 1
@@ -1017,9 +736,38 @@ class Train_RDL_Denoising(tf.keras.Model):
             input_PFE_batch_val_new_reshape,
         ], gt_batch_val_new_reshape
 
-        # if self.verbose:
-        if False:
-            pass
+        def plot_batches_only(input_MPE_batch, input_PFE_batch, gt_batch):
+            num_batches = input_MPE_batch.shape[0]
+            random_indices = np.random.choice(num_batches, 5, replace=False)
+
+            fig, axes = plt.subplots(5, 3, figsize=(15, 15))
+
+            for i, idx in enumerate(random_indices):
+                axes[i, 0].imshow(input_MPE_batch[idx])
+                axes[i, 0].set_title(f"input MPE batch {idx}")
+                axes[i, 0].axis("off")
+
+                axes[i, 1].imshow(input_PFE_batch[idx])
+                axes[i, 1].set_title(f"input PFE batch {idx}")
+                axes[i, 1].axis("off")
+
+                axes[i, 2].imshow(gt_batch[idx])
+                axes[i, 2].set_title(f"gt batch {idx}")
+                axes[i, 2].axis("off")
+            plt.tight_layout()
+            plt.savefig(
+                f"{self.results_path}/DN_input_features_from_branch.tiff",
+                bbox_inches="tight",
+            )
+            plt.show()
+
+        if self.verbose:
+
+            plot_batches_only(
+                input_MPE_batch_new_reshape,
+                input_PFE_batch_new_reshape,
+                gt_batch_new_reshape,
+            )
 
         print("model summary")
         # self.denmodel.summary()
@@ -1030,30 +778,6 @@ class Train_RDL_Denoising(tf.keras.Model):
             if layer.name in ["pfe_out", "mfe_out"]:
                 print(layer.name, "output shape:", layer.output_shape)
 
-        original_weights = self.denmodel.get_weights()
-
-        print()
-        print("before actual training starts,  the status of memory")
-        print_memory_usage()
-        print()
-        print()
-
-        strategy = tf.distribute.MirroredStrategy()
-        print("Number of GPUs used:", strategy.num_replicas_in_sync)
-        # with strategy.scope():
-
-        # self.denmodel.fit([input_MPE_batch_new_reshape, input_PFE_batch_new_reshape], gt_batch_new_reshape , validation_data = val_data, batch_size=self.batch_size,
-        #                     epochs=self.epochs, shuffle=True, verbose = True,
-        #                     callbacks=[lrate, hrate, srate, early_stopping, tensorboard_callback])
-        # print('saving the  trained DN model')
-        # print('model summary')
-        new_denmodel = Denoiser((self.Ny, self.Nx, self.nphases))
-
-        # Compile the new model with the same loss and optimizer
-        new_denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
-
-        # Load the original weights into the new model
-        new_denmodel.set_weights(original_weights)
         print()
         print("this is being feed into actual model trainng")
         print(
@@ -1070,23 +794,9 @@ class Train_RDL_Denoising(tf.keras.Model):
         print(f"val_data shape: {val_data[1].shape}")
 
         print()
-        try:
-            gpus = tf.config.list_physical_devices("GPU")
-            print(f"gpu information: {gpus}")
-            if gpus:
-                for gpu in gpus:
-                    mem_info = tf.config.experimental.get_memory_info(gpu.name)
-                    allocated = mem_info.get("current", 0) / (1024**3)
-                    peak = mem_info.get("peak", 0) / (1024**3)
-                    print(
-                        f"GPU {gpu.name}: Allocated Memory = {allocated:.2f} GB, Peak Memory = {peak:.2f} GB"
-                    )
-            else:
-                print("No GPUs found.")
-        except Exception as e:
-            print("Could not retrieve GPU memory info:", e)
+
         # Train the new model on multiple GPUs
-        new_denmodel.fit(
+        self.denmodel.fit(
             [input_MPE_batch_new_reshape, input_PFE_batch_new_reshape],
             gt_batch_new_reshape,
             validation_data=val_data,
@@ -1102,12 +812,8 @@ class Train_RDL_Denoising(tf.keras.Model):
                 tensorboard_callback,
             ],
         )
-
-        # Step 4: Update the original model's weights with the trained weights
-        self.denmodel.set_weights(new_denmodel.get_weights())
-
         self.denmodel.save(self.den_model_dir)
-        # self.denmodel.save(self.den_model_dir)
+
         print("model has been saved")
 
     def predict(self, data):
@@ -1115,21 +821,15 @@ class Train_RDL_Denoising(tf.keras.Model):
             "        #############     #####################     Prediction Started                     ############################                                 #############"
         )
         x = data
-        # print(f"inside prediction data received {x.shape} ")
+
         input_height = x.shape[1]
         input_width = x.shape[2]
-        # channels = x.shape[-1]
-        # with tf.device("/GPU:0"):
-        sr_y_predict = self.srmodel.predict(x)
+
+        sr_y_predict = normalize(self.srmodel.predict(x))
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
 
-        # we have to normalize the SR data
-        # sr_y_predict = normalize(sr_y_predict)
-
-        # list_image_gen = []
-        # list_image_in = []
         list_image_SR = []
-        # list_prediction = []
+
         predictions_list = []
 
         batch_size_for_data_pre_process = 300
@@ -1155,25 +855,16 @@ class Train_RDL_Denoising(tf.keras.Model):
             # list_image_gt = []
             for i in range(x_batch.shape[0]):
                 img_in = x_batch[i : i + 1][0]  # --> 128,128,9
-                # print(f'img_in before phase computation {img_in.shape} dtype: {img_in.dtype} max: {np.max(img_in)} min: {np.min(img_in)}')
+
                 img_SR = sr_y_predict_batch[i : i + 1][0]
-                # print(f'img_SR before phase computation {img_SR.shape} dtype: {img_SR.dtype} max: {np.max(img_SR)} min: {np.min(img_SR)}')
+
                 list_image_SR.append(img_SR)
-                # image_gt = y[i:i+1][0]
+
                 cur_k0, cur_k0_angle, modamp = self._get_cur_k(image_gt=img_in)
-                # print()
-                # print("comming out of prediction branch")
-                # print(
-                #     f"cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}"
-                # )
-                # print()
-                # print(f'img_SR before phase computation {img_SR.shape}')
-                # img_gen, gen_pattern, pattrned_img_fft_save
-                # img_gen, gen_pattern, pattrned_img_fft_save = self._phase_computation(img_SR, modamp, cur_k0_angle, cur_k0)
+
                 img_gen = self._phase_computation(
                     img_SR, modamp, cur_k0_angle, cur_k0
                 )
-                # print(f'image_gen from phase computation {image_gen.shape}')
 
                 img_gen = np.transpose(img_gen, (1, 2, 0))
                 # image_gen =  image_gen[:, :, ::-1]
@@ -1232,7 +923,7 @@ class Train_RDL_Denoising(tf.keras.Model):
                     tifffile.imwrite(
                         f'{filename.split(".")[0]}.tiff', prediction
                     )
-                    plt.savefig(filename, dpi=300)
+                    plt.savefig(filename)
                     plt.show()
 
                 pred = []

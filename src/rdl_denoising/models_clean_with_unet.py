@@ -1,13 +1,12 @@
-import os
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.fft as F
-import psutil
 import tensorflow as tf
 import tifffile
 from csbdeep.utils import normalize
+from sim_fitting import cal_modamp, get_otf
+from skimage.transform import resize
 from tensorflow.keras import callbacks, regularizers
 from tensorflow.keras.layers import (
     AveragePooling2D,
@@ -23,28 +22,17 @@ from tensorflow.keras.layers import (
 from tensorflow.keras.models import Model
 from tqdm import tqdm
 
-from rdl_denoising.sim_fitting import cal_modamp, get_otf
-
-
-def print_memory_usage():
-    process = psutil.Process(os.getpid())  # Get the current Python process
-    memory_info = (
-        process.memory_info()
-    )  # Get memory usage details for this process
-    print()
-    print(
-        "----------------------------->>       Process Memory Usage       <<-----------------------------"
-    )
-    print(f"RSS (Resident Set Size): {memory_info.rss / (1024 ** 3):.2f} GB")
-    print(f"VMS (Virtual Memory Size): {memory_info.vms / (1024 ** 3):.2f} GB")
-    print(
-        f"Shared Memory: {memory_info.shared / (1024 ** 3):.2f} GB"
-        if memory_info.shared
-        else "N/A"
-    )
-    print(f"Data Memory: {memory_info.data / (1024 ** 3):.2f} GB")
-    print(f"Text Memory: {memory_info.text / (1024 ** 3):.2f} GB")
-    print()
+# def print_memory_usage():
+#     process = psutil.Process(os.getpid())  # Get the current Python process
+#     memory_info = process.memory_info()   # Get memory usage details for this process
+#     print()
+#     print('----------------------------->>       Process Memory Usage       <<-----------------------------')
+#     print(f"RSS (Resident Set Size): {memory_info.rss / (1024 ** 3):.2f} GB")
+#     print(f"VMS (Virtual Memory Size): {memory_info.vms / (1024 ** 3):.2f} GB")
+#     print(f"Shared Memory: {memory_info.shared / (1024 ** 3):.2f} GB" if memory_info.shared else "N/A")
+#     print(f"Data Memory: {memory_info.data / (1024 ** 3):.2f} GB")
+#     print(f"Text Memory: {memory_info.text / (1024 ** 3):.2f} GB")
+#     print()
 
 
 # def GlobalAveragePooling(input):
@@ -68,55 +56,31 @@ def print_memory_usage():
 # def FCALayer(input, channel, reduction=16):
 #     absfft1 = Lambda(fft2)(input)
 #     absfft1 = Lambda(fftshift)(absfft1)
-
+#     ###############   why this 2 lines are there ?? ################
 #     absfft1 = tf.abs(absfft1, name="absfft1")
 #     absfft1 = tf.cast(absfft1, dtype=tf.float32)
 #     # the fftshit are are  not resized as the original code: it throughs lambda error.
 #     # output = tf.image.resize(output, (128, 128)) # this line is not there into the ffshift output
 
-
+#     ###################################################################
 #     absfft2 = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         activation="relu",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
+#         channel, kernel_size=3, activation="relu", padding="same", kernel_regularizer=regularizers.l2(1.0e-4)
 #     )(absfft1)
 #     absfft2 = LayerNormalization()(absfft2)
 #     W = Lambda(global_average_pooling)(absfft2)
 #     W = Conv2D(
-#         channel // reduction,
-#         kernel_size=1,
-#         activation="relu",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
+#         channel // reduction, kernel_size=1, activation="relu", padding="same", kernel_regularizer=regularizers.l2(1.0e-4)
 #     )(W)
 #     W = LayerNormalization()(W)
-#     W = Conv2D(
-#         channel,
-#         kernel_size=1,
-#         activation="sigmoid",
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(W)
+#     W = Conv2D(channel, kernel_size=1, activation="sigmoid", padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(W)
 #     mul = multiply([input, W])
 #     return mul
 
 
 # def FCAB(input, channel):
-#     conv = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(input)
+#     conv = Conv2D(channel, kernel_size=3, padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(input)
 #     conv = Lambda(gelu)(conv)
-#     conv = Conv2D(
-#         channel,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(conv)
+#     conv = Conv2D(channel, kernel_size=3, padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(conv)
 #     conv = Lambda(gelu)(conv)
 #     att = FCALayer(conv, channel, reduction=16)
 #     output = add([att, input])
@@ -139,31 +103,16 @@ def print_memory_usage():
 
 # def DFCAN(input_shape, scale=2):
 #     inputs = Input(input_shape)
-#     conv = Conv2D(
-#         64,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(inputs)
+#     conv = Conv2D(64, kernel_size=3, padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(inputs)
 #     conv = Lambda(gelu)(conv)
 #     n_ResGroup = 4
 #     for _ in range(n_ResGroup):
 #         conv = ResidualGroup(conv, channel=64)
-#     conv = Conv2D(
-#         64 * (scale**2),
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(conv)
+#     conv = Conv2D(64 * (scale**2), kernel_size=3, padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(conv)
 #     conv = Lambda(gelu)(conv)
 
 #     upsampled = Lambda(pixelshuffle, arguments={"scale": scale})(conv)
-#     conv = Conv2D(
-#         1,
-#         kernel_size=3,
-#         padding="same",
-#         kernel_regularizer=regularizers.l2(1.0e-4),
-#     )(upsampled)
+#     conv = Conv2D(1, kernel_size=3, padding="same", kernel_regularizer=regularizers.l2(1.0e-4))(upsampled)
 #     output = Activation("sigmoid")(conv)
 #     model = Model(inputs=inputs, outputs=output)
 #     return model
@@ -171,10 +120,10 @@ def print_memory_usage():
 
 # def apodize2d(img, napodize=10):
 #     bs, ny, nx, ch = img.get_shape().as_list()
-#     img_apo = img[:, napodize : ny - napodize, :, :]
+#     img_apo = img[:, napodize:ny-napodize, :, :]
 
 #     imageUp = img[:, 0:napodize, :, :]
-#     imageDown = img[:, ny - napodize :, :, :]
+#     imageDown = img[:, ny-napodize:, :, :]
 #     diff = (imageDown[:, -1::-1, :, :] - imageUp) / 2
 #     l = np.arange(napodize)
 #     fact_raw = 1 - np.sin((l + 0.5) / napodize * np.pi / 2)
@@ -187,8 +136,8 @@ def print_memory_usage():
 #     img_apo = tf.concat([imageUp, img_apo, imageDown], axis=1)
 
 #     imageLeft = img_apo[:, :, 0:napodize, :]
-#     imageRight = img_apo[:, :, nx - napodize :, :]
-#     img_apo = img_apo[:, :, napodize : nx - napodize, :]
+#     imageRight = img_apo[:, :, nx-napodize:, :]
+#     img_apo = img_apo[:, :, napodize:nx-napodize, :]
 #     diff = (imageRight[:, :, -1::-1, :] - imageLeft) / 2
 #     fact = fact_raw[np.newaxis, np.newaxis, :, np.newaxis]
 #     fact = tf.convert_to_tensor(fact, dtype=tf.float32)
@@ -206,14 +155,11 @@ def print_memory_usage():
 #         layer_in, block_size=scale
 #     )  # here I changes :  block_size=scale :  to :  block_size=2*scale  :
 
-
 # def fft2(input):
-#     input = apodize2d(input, napodize=10)  # the apodization has been added
+#     input = apodize2d(input, napodize=10) # the apodization has been added
 #     temp = K.permute_dimensions(input, (0, 3, 1, 2))
 #     fft = tf.signal.fft2d(tf.complex(temp, tf.zeros_like(temp)))
-#     absfft = tf.pow(
-#         tf.abs(fft) + 1e-8, 0.1
-#     )  # this is Gamma operation to enhance the contribution of high frequency contribution.
+#     absfft = tf.pow(tf.abs(fft)+1e-8, 0.1) # this is Gamma operation to enhance the contribution of high frequency contribution.
 #     output = K.permute_dimensions(absfft, (0, 2, 3, 1))
 #     return output
 
@@ -518,9 +464,7 @@ class Train_RDL_Denoising(tf.keras.Model):
                 phOffset = phase_list[d] + i * self.phase_space
 
                 # print()
-                # print(
-                #     f"kxL: {kxL} kyL: {kyL} kxR: {kxR} kyR: {kyR} phOffset: {phOffset}"
-                # )
+                # print(f'kxL: {kxL} kyL: {kyL} kxR: {kxR} kyR: {kyR} phOffset: {phOffset}')
                 # print()
                 interBeam = np.exp(
                     1j * (kxL * self.X + kyL * self.Y + phOffset)
@@ -528,17 +472,31 @@ class Train_RDL_Denoising(tf.keras.Model):
                 # interBeam = (np.exp(1j * (kxL * self.X + kyL * self.Y + phOffset)) + np.exp(1j * (kxR * self.X + kyR * self.Y)))
 
                 pattern = normalize(np.square(np.abs(interBeam)))
+                # print(f'this are the pattern shape : {pattern.shape} dtype: {pattern.dtype} max: {np.max(pattern)} min: {np.min(pattern)}')
+                # reversing the pattern
 
+                # print(f'this are the pattern  reversed shape : {pattern.shape} dtype: {pattern.dtype} max: {np.max(pattern)} min: {np.min(pattern)}')
+                # pattern = normalize(np.abs(interBeam))
+                # gen_pattern.append(pattern)
+
+                # print(f'Raw pattern information \n :  shape: {pattern.shape} dtype: {pattern.dtype} max: {np.max(pattern)} min: {np.min(pattern)} \n ')
+                # :  shape: (256, 256) dtype: float32 max: 1.0000102519989014 min: -0.0022249433677643538
+
+                # print(f'OTF INFORMAIOTN FOR GENERATING MODULATE IMAGE: \n {self.OTF.shape} {self.OTF.dtype} {np.max(self.OTF)} {np.min(self.OTF)}')
                 patterned_img_fft = (
                     F.fftshift(F.fft2(pattern * img_SR)) * self.OTF
                 )
-
+                # pattrned_img_fft_save.append(patterned_img_fft)
+                # print(f'patterned_img_fft information \n :  shape: {patterned_img_fft.shape} dtype: {patterned_img_fft.dtype} max: {np.max(patterned_img_fft)} min: {np.min(patterned_img_fft)} \n ')
+                # :  shape: (256, 256) dtype: complex128 max: (2125.2898119242027+0j) min: (-158.72604990708248-125.02544266014829j)
                 modulated_img = np.abs(F.ifft2(F.ifftshift(patterned_img_fft)))
-
+                # print(f'modulated_img information \n :  shape: {modulated_img.shape} dtype: {modulated_img.dtype} max: {np.max(modulated_img)} min: {np.min(modulated_img)} \n ')
+                # :  shape: (256, 256) dtype: float64 max: 0.10262195842657973 min: 0.015000125525139074
                 modulated_img = normalize(
                     cv2.resize(modulated_img, (self.Ny, self.Nx))
                 )
-
+                # print(f'modulated_img after resize information \n :  shape: {modulated_img.shape} dtype: {modulated_img.dtype} max: {np.max(modulated_img)} min: {np.min(modulated_img)} \n ')
+                # :  shape: (128, 128) dtype: float32 max: 1.139858603477478 min: -0.04895542189478874
                 img_gen.append(modulated_img)
 
         img_gen = np.asarray(img_gen)
@@ -647,7 +605,10 @@ class Train_RDL_Denoising(tf.keras.Model):
         - pattern_batch: numpy array of shape (B, H, W, C), where B is the batch size, H is height, W is width, and C is the number of channels.
         - filename: string, the name of the file to save the figure (default is 'output.png').
         """
+        # Check if the input array is of the expected shape
+        # print(f'{filename} shape: {pattern_batch.shape} type {type(pattern_batch)} min {np.min(pattern_batch)} max {np.max(pattern_batch)}')
 
+        # Calculate the number of subplots needed
         num_images = pattern_batch.shape[0]
         num_channels = pattern_batch.shape[-1]
         total_subplots = num_images * num_channels
@@ -714,8 +675,43 @@ class Train_RDL_Denoising(tf.keras.Model):
             mode="min",  # We want to minimize validation loss
             restore_best_weights=True,  # Restore model weights from the epoch with the best validation loss
         )
-        # with tf.device("/GPU:0"):
-        sr_y_predict = self.srmodel.predict(x)
+        # with tf.device('/GPU:0'):
+        print()
+        print()
+        print(
+            "inside the model  SR block, this is what going in for model prediction"
+        )
+        print(f"x shape: {x.shape} min: {np.min(x)} max: {np.max(x)}")
+
+        # inside the model  SR block, this is what going in for model prediction
+        # x shape: (20, 128, 128, 9) min: -0.3303571343421936 max: 2.3913042545318604
+
+        # sr_y_predict = self.srmodel.predict(x)
+        x_sr = tf.transpose(x, perm=(0, 3, 1, 2))  # here is teh change
+        print()
+        print()
+        print(f"the shpe   of x_sr : {x_sr.shape}")
+
+        sr_y_predict = [
+            self.srmodel.predict(x_s[..., np.newaxis].numpy(), axes="ZYXC")
+            for x_s in x_sr
+        ]
+        # sr_y_predict = self.srmodel(x, training=False) # here is teh change
+
+        sr_y_predict = np.array(sr_y_predict)
+
+        print()
+        print(f"this came out of sr prediction : {sr_y_predict.shape}")
+
+        # this is what came out of SR preciction
+        # sr_y_predict shape: (20, 256, 256, 1) min: 0.03381483256816864 max: 0.6741549372673035
+
+        print()
+        print("this is what came out of SR preciction")
+        print(
+            f"sr_y_predict shape: {sr_y_predict.shape} min: {np.min(sr_y_predict)} max: {np.max(sr_y_predict)}"
+        )
+        print()
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
 
         # we have to normalize the SR data
@@ -731,10 +727,10 @@ class Train_RDL_Denoising(tf.keras.Model):
         num_batches = int(
             np.ceil(x.shape[0] / batch_size_for_data_pre_process)
         )
-        print()
-        print()
-        print("before the bacth preprocessing startes on the training data")
-        print_memory_usage()
+        # print()
+        # print()
+        # print("before the bacth preprocessing startes on the training data")
+        # print_memory_usage()
 
         # Process data in batches with a progress bar
         for batch_idx in tqdm(
@@ -751,12 +747,12 @@ class Train_RDL_Denoising(tf.keras.Model):
             y_batch = y[start_idx:end_idx]
             sr_y_predict_batch = sr_y_predict[start_idx:end_idx]
 
-            print()
-            print(
-                "before each mini batch startes for training data pre processing"
-            )
-            print_memory_usage()
-            print()
+            # print()
+            # print(
+            #     "before each mini batch startes for training data pre processing"
+            # )
+            # print_memory_usage()
+            # print()
 
             for i in range(x_batch.shape[0]):
                 # for batch_idx in tqdm(range(num_batches), desc="Processing batches"):
@@ -812,12 +808,12 @@ class Train_RDL_Denoising(tf.keras.Model):
                 list_image_gt.append(
                     image_gt
                 )  # ----> being append to the list outside of bathing for loop
-            print()
-            print(
-                "after each batch pre processing training data pre processing ---> Memory requirement"
-            )
-            print_memory_usage()
-            print()
+            # print()
+            # print(
+            #     "after each batch pre processing training data pre processing ---> Memory requirement"
+            # )
+            # print_memory_usage()
+            # print()
 
         input_MPE_batch = np.asarray(list_image_gen)
         input_PFE_batch = np.asarray(list_image_in)
@@ -913,14 +909,28 @@ class Train_RDL_Denoising(tf.keras.Model):
         input_PFE_batch_new_reshape = np.asarray(input_PFE_batch_new_reshape)
         gt_batch_new_reshape = np.asarray(gt_batch_new_reshape)
 
-        # Pre_process for Validation Data
+        #  Pre_process for Validation Data
         # input_height_val = x_val.shape[1]
         # input_width_val = x_val.shape[2]
         # channels_val = x_val.shape[-1]
         x_val, y_val = data_val
         # this part is for validation data
-        # with tf.device("/GPU:0"):
-        sr_y_predict_val = self.srmodel.predict(x_val)
+        # with tf.device('/GPU:0'):
+
+        x_sr_val = tf.transpose(x_val, perm=(0, 3, 1, 2))  # here is teh change
+        print()
+        print()
+        print(f"the shpe   of x_sr : {x_sr_val.shape}")
+
+        sr_y_predict_val = [
+            self.srmodel.predict(x_s[..., np.newaxis].numpy(), axes="ZYXC")
+            for x_s in x_sr_val
+        ]
+        # sr_y_predict = self.srmodel(x, training=False) # here is teh change
+
+        sr_y_predict_val = np.array(sr_y_predict_val)
+
+        # sr_y_predict_val = self.srmodel.predict(x_val)
         sr_y_predict_val = tf.squeeze(
             sr_y_predict_val, axis=-1
         )  # Batch, Ny, Nx, 1
@@ -1021,6 +1031,10 @@ class Train_RDL_Denoising(tf.keras.Model):
         if False:
             pass
 
+            # print(f'input MPE {input_MPE_batch.shape}, input PFE {input_PFE_batch.shape},gt {gt_batch.shape}, patterns {patterns_batch.shape} , patterns_fft {pattrned_img_fft_save_batch.shape}')
+            # plot_batches(self, input_MPE_batch_new_reshape, input_PFE_batch_new_reshape, gt_batch_new_reshape, patterns_batch_new_reshape,
+            #                    input_MPE_batch_restored,input_PFE_batch_restored, gt_batch_restored ,patterns_batch_restored, image_gt_ori, image_input_ori) # have to pass epoch
+
         print("model summary")
         # self.denmodel.summary()
         print("model outputs")
@@ -1030,30 +1044,31 @@ class Train_RDL_Denoising(tf.keras.Model):
             if layer.name in ["pfe_out", "mfe_out"]:
                 print(layer.name, "output shape:", layer.output_shape)
 
-        original_weights = self.denmodel.get_weights()
+        # original_weights = self.denmodel.get_weights()
 
-        print()
-        print("before actual training starts,  the status of memory")
-        print_memory_usage()
-        print()
-        print()
+        # print()
+        # print("before actual training starts,  the status of memory")
+        # print_memory_usage()
+        # print()
+        # print()
 
-        strategy = tf.distribute.MirroredStrategy()
-        print("Number of GPUs used:", strategy.num_replicas_in_sync)
+        print("Number of GPUs used: 1")
+        # self.denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
+
+        # strategy = tf.distribute.MirroredStrategy()
         # with strategy.scope():
-
         # self.denmodel.fit([input_MPE_batch_new_reshape, input_PFE_batch_new_reshape], gt_batch_new_reshape , validation_data = val_data, batch_size=self.batch_size,
         #                     epochs=self.epochs, shuffle=True, verbose = True,
         #                     callbacks=[lrate, hrate, srate, early_stopping, tensorboard_callback])
         # print('saving the  trained DN model')
         # print('model summary')
-        new_denmodel = Denoiser((self.Ny, self.Nx, self.nphases))
+        #     new_denmodel = Denoiser((self.Ny, self.Nx, self.nphases))
 
-        # Compile the new model with the same loss and optimizer
-        new_denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
+        # # Compile the new model with the same loss and optimizer
+        #     new_denmodel.compile(loss=self.loss_fn, optimizer=self.optimizer)
 
-        # Load the original weights into the new model
-        new_denmodel.set_weights(original_weights)
+        #     # Load the original weights into the new model
+        #     new_denmodel.set_weights(original_weights)
         print()
         print("this is being feed into actual model trainng")
         print(
@@ -1070,23 +1085,59 @@ class Train_RDL_Denoising(tf.keras.Model):
         print(f"val_data shape: {val_data[1].shape}")
 
         print()
-        try:
-            gpus = tf.config.list_physical_devices("GPU")
-            print(f"gpu information: {gpus}")
-            if gpus:
-                for gpu in gpus:
-                    mem_info = tf.config.experimental.get_memory_info(gpu.name)
-                    allocated = mem_info.get("current", 0) / (1024**3)
-                    peak = mem_info.get("peak", 0) / (1024**3)
-                    print(
-                        f"GPU {gpu.name}: Allocated Memory = {allocated:.2f} GB, Peak Memory = {peak:.2f} GB"
-                    )
-            else:
-                print("No GPUs found.")
-        except Exception as e:
-            print("Could not retrieve GPU memory info:", e)
+
+        def plot_batches_only(input_MPE_batch, input_PFE_batch, gt_batch):
+            num_batches = input_MPE_batch.shape[0]
+            random_indices = np.random.choice(num_batches, 5, replace=False)
+
+            fig, axes = plt.subplots(5, 3, figsize=(15, 15))
+
+            for i, idx in enumerate(random_indices):
+                axes[i, 0].imshow(input_MPE_batch[idx])
+                axes[i, 0].set_title(f"input MPE batch {idx}")
+                axes[i, 0].axis("off")
+
+                axes[i, 1].imshow(input_PFE_batch[idx])
+                axes[i, 1].set_title(f"input PFE batch {idx}")
+                axes[i, 1].axis("off")
+
+                axes[i, 2].imshow(gt_batch[idx])
+                axes[i, 2].set_title(f"gt batch {idx}")
+                axes[i, 2].axis("off")
+            plt.tight_layout()
+            plt.savefig(
+                f"{self.results_path}/DN_input_features_from_branch.tiff",
+                bbox_inches="tight",
+            )
+            plt.show()
+
+        if self.verbose:
+            plot_batches_only(
+                input_MPE_batch_new_reshape,
+                input_PFE_batch_new_reshape,
+                gt_batch_new_reshape,
+            )
+
+        # print()
+        # print("before model training starts,  the status of memory")
+        # print_memory_usage()
+
+        # print()
+        print(
+            f"input_MPE_batch_new_reshape : {input_MPE_batch_new_reshape.shape}"
+        )
+        print(
+            f"input_PFE_batch_new_reshape : {input_PFE_batch_new_reshape.shape}"
+        )
+        print(f"gt_batch_new_reshape : {gt_batch_new_reshape.shape}")
+
+        print()
+        print(f"val_data MPE shape: {val_data[0][0].shape}")
+        print(f"val_data PFE shape: {val_data[0][1].shape}")
+        print(f"val_data GT shape: {val_data[1].shape}")
+
         # Train the new model on multiple GPUs
-        new_denmodel.fit(
+        self.denmodel.fit(
             [input_MPE_batch_new_reshape, input_PFE_batch_new_reshape],
             gt_batch_new_reshape,
             validation_data=val_data,
@@ -1103,25 +1154,68 @@ class Train_RDL_Denoising(tf.keras.Model):
             ],
         )
 
-        # Step 4: Update the original model's weights with the trained weights
-        self.denmodel.set_weights(new_denmodel.get_weights())
-
-        self.denmodel.save(self.den_model_dir)
-        # self.denmodel.save(self.den_model_dir)
+        self.denmodel.save(self.den_model_dir)  # not saving for debugging
         print("model has been saved")
 
-    def predict(self, data):
+    def predict(self, data_x):
+
         print(
             "        #############     #####################     Prediction Started                     ############################                                 #############"
         )
-        x = data
-        # print(f"inside prediction data received {x.shape} ")
+        x = data_x
+        # y = data_gt
+        print(f"inside prediction data received {x.shape} ")
         input_height = x.shape[1]
         input_width = x.shape[2]
         # channels = x.shape[-1]
-        # with tf.device("/GPU:0"):
-        sr_y_predict = self.srmodel.predict(x)
+        # with tf.device('/GPU:0'):
+
+        print(f"for prediction, received data shape: {x.shape}")
+
+        x_sr_predict = tf.transpose(x, perm=(0, 3, 1, 2))  # here is teh change
+        print()
+        print()
+        print(f"the shpe   of x_sr : {x_sr_predict.shape}")
+
+        #    this is what u_net_prediction_needs
+        #    (5, 9, 128, 128, 1)
+
+        sr_y_predict = [
+            self.srmodel.predict(x_s[..., np.newaxis].numpy(), axes="ZYXC")
+            for x_s in x_sr_predict
+        ]
+        # sr_y_predict = self.srmodel(x, training=False) # here is teh change
+
+        sr_y_predict = np.array(sr_y_predict)
+
+        # sr_y_predict = self.srmodel.predict(x)
         sr_y_predict = tf.squeeze(sr_y_predict, axis=-1)  # Batch, Ny, Nx, 1
+        print(
+            f"this is what came out of SR preciction for full image {sr_y_predict.shape}"
+        )
+        # import tifffile as tiff
+        # tiff.imwrite('/share/klab/argha/files_to_transfer/to_fetch_SR_u_nte-Full/sr_y_predict_inside_full_prediction.tif', sr_y_predict.numpy())
+        if sr_y_predict.shape[1] in [1014, 1006]:
+            print("I am resizing to 1004 x 1004")
+            temp_image = tf.squeeze(sr_y_predict)
+            temp_image_resize = resize(
+                temp_image, (1004, 1004), anti_aliasing=True
+            )
+            sr_y_predict = temp_image_resize[np.newaxis, ...]
+
+        if sr_y_predict.shape[1] in [604]:
+            print("I am resizing to 600 x 600")
+            temp_image = tf.squeeze(sr_y_predict)
+            temp_image_resize = resize(
+                temp_image, (600, 600), anti_aliasing=True
+            )
+            sr_y_predict = temp_image_resize[np.newaxis, ...]
+
+        # tiff.imwrite('/share/klab/argha/files_to_transfer/to_fetch_SR_u_nte-Full/sr_y_predict_inside_full_prediction_after_resize.tif', sr_y_predict.numpy() if hasattr(sr_y_predict, 'numpy') else sr_y_predict)
+
+        print(
+            f"sr predcitec inside prediction after squeueze now {sr_y_predict.shape}"
+        )
 
         # we have to normalize the SR data
         # sr_y_predict = normalize(sr_y_predict)
@@ -1149,6 +1243,7 @@ class Train_RDL_Denoising(tf.keras.Model):
 
             # Extract the current batch from x, y, and sr_y_predict
             x_batch = x[start_idx:end_idx]
+            # y_batch = y[start_idx:end_idx]
 
             sr_y_predict_batch = sr_y_predict[start_idx:end_idx]
 
@@ -1157,15 +1252,16 @@ class Train_RDL_Denoising(tf.keras.Model):
                 img_in = x_batch[i : i + 1][0]  # --> 128,128,9
                 # print(f'img_in before phase computation {img_in.shape} dtype: {img_in.dtype} max: {np.max(img_in)} min: {np.min(img_in)}')
                 img_SR = sr_y_predict_batch[i : i + 1][0]
+                # img_gt = y_batch[i:i+1][0]
                 # print(f'img_SR before phase computation {img_SR.shape} dtype: {img_SR.dtype} max: {np.max(img_SR)} min: {np.min(img_SR)}')
                 list_image_SR.append(img_SR)
                 # image_gt = y[i:i+1][0]
-                cur_k0, cur_k0_angle, modamp = self._get_cur_k(image_gt=img_in)
+                cur_k0, cur_k0_angle, modamp = self._get_cur_k(
+                    image_gt=img_in
+                )  # can be also image_in
                 # print()
-                # print("comming out of prediction branch")
-                # print(
-                #     f"cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}"
-                # )
+                # print('comming out of prediction branch')
+                # print(f'cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}')
                 # print()
                 # print(f'img_SR before phase computation {img_SR.shape}')
                 # img_gen, gen_pattern, pattrned_img_fft_save
@@ -1176,7 +1272,7 @@ class Train_RDL_Denoising(tf.keras.Model):
                 # print(f'image_gen from phase computation {image_gen.shape}')
 
                 img_gen = np.transpose(img_gen, (1, 2, 0))
-                # image_gen =  image_gen[:, :, ::-1]
+                img_gen = img_gen[:, :, ::-1]
 
                 # intensity equalization for the input image and ground truth image
 
@@ -1270,3 +1366,275 @@ class Train_RDL_Denoising(tf.keras.Model):
         image_SR_batch = np.asarray(list_image_SR)
 
         return predictions_list, image_SR_batch
+
+    # def predict_2(self, data_x):
+
+    #     def reshape_channels( array):
+    #         """
+    #         Reshapes an array of shape (m, 128, 128, 9) to (m * 3, 128, 128, 3).
+
+    #         Parameters:
+    #         - array: numpy array of shape (m, 128, 128, 9)
+
+    #         Returns:
+    #         - reshaped array of shape (m * 3, 128, 128, 3)
+    #         """
+    #         # print(f'from reshape_channels:received:  {array.shape}')
+    #         # Check if the input array has the correct number of channels (9)
+    #         if array.shape[-1] != 9:
+    #             raise ValueError("The last dimension must be 9 channels.")
+
+    #         # Step 1: Reshape from (m, 128, 128, 9) to (m, 128, 128, 3, 3)
+    #         if array.shape[-2] == 128:
+    #             reshaped = array.reshape(array.shape[0], 128, 128, 3, 3)
+    #             reshaped = reshaped.transpose(0, 3, 1, 2, 4).reshape(-1, 128, 128, 3)
+    #             # print(f'from reshape_channels: {reshaped.shape}')
+
+    #             return reshaped
+    #         else:
+    #             reshaped = array.reshape(array.shape[0], 256, 256, 3, 3)
+    #             reshaped = reshaped.transpose(0, 3, 1, 2, 4).reshape(-1, 256, 256, 3)
+    #             # print(f'from reshape_channels: {reshaped.shape}')
+
+    #             return reshaped
+
+    #     def restore_channels(array):
+    #         """
+    #         Restores an array of shape (m * 3, 128, 128, 3) back to (m, 128, 128, 9).
+
+    #         Parameters:
+    #         - array: numpy array of shape (m * 3, 128, 128, 3)
+
+    #         Returns:
+    #         - reshaped array of shape (m, 128, 128, 9)
+    #         """
+    #         # print(f'from restore_channels: received: {array.shape}')
+    #         if array.shape[2]  == 128:
+    #             # Step 1: Reshape the array from (30, 128, 128, 3) to (10, 3, 128, 128, 3)
+    #             reshaped = array.reshape(-1, 3, 128, 128, 3)
+
+    #             # Step 2: Transpose the array back to the shape (10, 128, 128, 3, 3)
+    #             reshaped = reshaped.transpose(0, 2, 3, 1, 4)
+
+    #             # Step 3: Reshape to (10, 128, 128, 9) by collapsing the last two dimensions
+    #             restored = reshaped.reshape(-1, 128, 128, 9)
+
+    #             # print(f'from restore_channels: restored shape: {restored.shape}')
+    #             return restored
+    #         else:
+    #             # Step 1: Reshape the array from (30, 128, 128, 3) to (10, 3, 128, 128, 3)
+    #             reshaped = array.reshape(-1, 3, 256, 256, 3)
+
+    #             # Step 2: Transpose the array back to the shape (10, 128, 128, 3, 3)
+    #             reshaped = reshaped.transpose(0, 2, 3, 1, 4)
+
+    #             # Step 3: Reshape to (10, 128, 128, 9) by collapsing the last two dimensions
+    #             restored = reshaped.reshape(-1, 256, 256, 9)
+
+    #             # print(f'from restore_channels: restored shape: {restored.shape}')
+    #             return restored
+
+    #     print('        #############     #####################     Prediction Started                     ############################                                 #############')
+    #     x = data_x
+    #     # y = data_gt
+    #     print(f'inside prediction data received {x.shape} ')
+    #     input_height = x.shape[1]
+    #     input_width = x.shape[2]
+    #     channels = x.shape[-1]
+    #     # with tf.device('/GPU:0'):
+
+    #     print(f'for prediction, received data shape: {x.shape}')
+
+    #     x_sr_predict = tf.transpose(x, perm=(0, 3,1,2)) # here is teh change
+    #     print()
+    #     print()
+    #     print(f'the shpe   of x_sr : {x_sr_predict.shape}')
+
+    #     #     this is what u_net_prediction_needs
+    #     #    (5, 9, 128, 128, 1)
+
+    #     sr_y_predict = [self.srmodel.predict(x_s[...,np.newaxis].numpy(), axes='ZYXC') for x_s in x_sr_predict]
+    #     # sr_y_predict = self.srmodel(x, training=False) # here is teh change
+
+    #     sr_y_predict = np.array(sr_y_predict)
+
+    #         # sr_y_predict = self.srmodel.predict(x)
+    #     sr_y_predict = tf.squeeze(sr_y_predict, axis=-1) # Batch, Ny, Nx, 1
+    #     print(f'this is what came out of SR preciction for full image {sr_y_predict.shape}')
+    #     import tifffile as tiff
+    #     tiff.imwrite('/share/klab/argha/files_to_transfer/to_fetch_SR_u_nte-Full/sr_y_predict_inside_full_prediction.tif', sr_y_predict.numpy())
+    #     if sr_y_predict.shape[1] in [1014, 1006]:
+    #         print(f'I am resizing to 1004 x 1004')
+    #         temp_image = tf.squeeze(sr_y_predict)
+    #         temp_image_resize = resize(temp_image, (1004, 1004), anti_aliasing=True)
+    #         sr_y_predict = temp_image_resize[np.newaxis, ...]
+
+    #     tiff.imwrite('/share/klab/argha/files_to_transfer/to_fetch_SR_u_nte-Full/sr_y_predict_inside_full_prediction_after_resize.tif', sr_y_predict.numpy() if hasattr(sr_y_predict, 'numpy') else sr_y_predict)
+
+    #     print(f'sr predcitec inside prediction after squeueze now {sr_y_predict.shape}')
+
+    #     ## we have to normalize the SR data
+    #     # sr_y_predict = normalize(sr_y_predict)
+
+    #     list_image_gen = []
+    #     list_image_in = []
+    #     list_image_SR = []
+    #     list_prediction = []
+    #     predictions_list = []
+
+    #     batch_size_for_data_pre_process = 300
+    #     num_batches = int(np.ceil(x.shape[0] / batch_size_for_data_pre_process))
+
+    #     # Process data in batches with a progress bar
+    #     for batch_idx in tqdm(range(num_batches), desc="Processing batches for prediction data"):
+    #         # Calculate the start and end indices for the current batch
+    #         start_idx = batch_idx * batch_size_for_data_pre_process
+    #         end_idx = min((batch_idx + 1) *batch_size_for_data_pre_process, x.shape[0])
+
+    #         # Extract the current batch from x, y, and sr_y_predict
+    #         x_batch = x[start_idx:end_idx]
+    #         # y_batch = y[start_idx:end_idx]
+
+    #         sr_y_predict_batch = sr_y_predict[start_idx:end_idx]
+
+    #         #list_image_gt = []
+    #         for i in range(x_batch.shape[0]):
+    #             img_in =x_batch[i:i+1][0]   # --> 128,128,9
+
+    #             print(f' img _ in _ gg 1 : {img_in.shape}')
+    #             # print(f'img_in before phase computation {img_in.shape} dtype: {img_in.dtype} max: {np.max(img_in)} min: {np.min(img_in)}')
+    #             img_SR = sr_y_predict_batch[i:i+1][0]
+    #             # img_gt = y_batch[i:i+1][0]
+    #             # print(f'img_SR before phase computation {img_SR.shape} dtype: {img_SR.dtype} max: {np.max(img_SR)} min: {np.min(img_SR)}')
+    #             list_image_SR.append(img_SR)
+    #             #image_gt = y[i:i+1][0]
+    #             cur_k0, cur_k0_angle, modamp = self._get_cur_k(image_gt=img_in) # can be also image_in
+    #             # print()
+    #             # print('comming out of prediction branch')
+    #             # print(f'cur_k0 shape: {cur_k0} cur_k0_angle shape: {cur_k0_angle} modamp shape: {modamp}')
+    #             # print()
+    #         # print(f'img_SR before phase computation {img_SR.shape}')
+    #             # img_gen, gen_pattern, pattrned_img_fft_save
+    #             # img_gen, gen_pattern, pattrned_img_fft_save = self._phase_computation(img_SR, modamp, cur_k0_angle, cur_k0)
+    #             img_gen = self._phase_computation(img_SR, modamp, cur_k0_angle, cur_k0)
+    #             #print(f'image_gen from phase computation {image_gen.shape}')
+
+    #             img_gen = np.transpose(img_gen, (1, 2, 0))
+    #             img_gen =  img_gen[:, :, ::-1]
+
+    #             #### intensity equalization for the input image and ground truth image   ####
+
+    #             # img_in = np.transpose(img_in, (2, 0, 1))
+    #             # # print(f'img_in before intensity qualization {img_in.shape}')
+
+    #             # mean_th_img_in = np.mean( img_in[self.nphases, :, :])
+    #             # for d in range(1, self.ndirs):
+    #             #     data_d =  img_in[d * self.nphases:(d + 1) * self.nphases, :, :]
+    #             #     img_in[d * self.nphases:(d + 1) * self.nphases, :, :] = data_d * mean_th_img_in / np.mean(data_d)
+
+    #             # img_in = np.transpose(img_in, (1, 2, 0))
+    #             list_image_in.append(img_in)  # ----> being append to the list outside of bathing for loop
+    #             list_image_gen.append(img_gen)
+    #             # list_image_gt = list_image_gt.append(image_gt) # ----> being append to the list outside of bathing for loop
+    #             list_image_SR.append(img_SR) # ----> being append to the list outside of bathing for loop
+
+    #     list_image_in = np.asarray(list_image_in)
+    #     list_image_gen = np.asarray(list_image_gen)
+    #     list_image_SR = np.asarray(list_image_SR)
+
+    #     list_image_in_reshape = reshape_channels(list_image_in)
+    #     list_image_gen_reshape = reshape_channels(list_image_gen)
+
+    #     print()
+    #     print(f'this are the brances created')
+    #     print(f'list_image_in_reshape shape: {list_image_in_reshape.shape}')
+    #     print(f'list_image_gen_reshape shape: {list_image_gen_reshape.shape}')
+
+    #     input1 = list_image_gen_reshape
+    #     input2 = list_image_in_reshape
+
+    #     def plot_prediction_1_to_3(prediction, filename = 'the_name.png'):
+    #         """
+    #         Plots a (1, 128, 128, 3) array as three separate images (128, 128, 1), (128, 128, 2), (128, 128, 3).
+
+    #         Parameters:
+    #         - prediction: numpy array of shape (1, 128, 128, 3)
+
+    #         """
+    #         # Step 1: Remove the batch dimension to get shape (128, 128, 3)
+    #         # print(f'this is the orediction received : {prediction.shape}')
+    #         img = np.squeeze(prediction, axis=0)
+    #         # img_g = np.transpose(prediction, (1,2,0))
+    #         img_g = img
+    #         # print(f'after trabspose : {img_g.shape}')
+
+    #         # Step 2: Split the 3 channels
+    #         channel_1 = img_g[:, :, 0]
+    #         channel_2 = img_g[:, :, 1]
+    #         channel_3 = img_g[:, :, 2]
+
+    #         # Step 3: Plot the 3 channels in a single row
+    #         fig, axs = plt.subplots(1, 3, figsize=(12, 4))
+
+    #         axs[0].imshow(channel_1, cmap='gray')
+    #         axs[0].set_title("Channel 1")
+    #         axs[0].axis('off')
+
+    #         axs[1].imshow(channel_2, cmap='gray')
+    #         axs[1].set_title("Channel 2")
+    #         axs[1].axis('off')
+
+    #         axs[2].imshow(channel_3, cmap='gray')
+    #         axs[2].set_title("Channel 3")
+    #         axs[2].axis('off')
+
+    #         # Step 4: Save the figure
+    #         plt.tight_layout()
+    #         tifffile.imwrite(f'{filename.split(".")[0]}.tiff', prediction)
+    #         plt.savefig(filename, dpi=300)
+    #         plt.show()
+
+    #     pred = []
+    #     print()
+    #     print(f'this is going inside prediciton 2')
+    #     print()
+    #     print(f'input1 shape: {input1.shape}')
+    #     print(f'input2 shape: {input2.shape}')
+
+    #     pr = self.denmodel.predict([input1, input2], verbose = False)
+
+    #     print(f'output of the pred 2 : {pr.shape}')
+    #     # pr = np.squeeze(pr)
+
+    #     pr = restore_channels(pr)
+
+    #     print()
+    #     print(f'after resote channels: {pr.shape}')
+
+    #     # for d in range(self.ndirs):
+    #     #     Gen = img_gen[:, :, d * self.ndirs:(d + 1) * self.nphases]
+    #     #     input_image = img_in[:, :, d * self.ndirs:(d + 1) * self.nphases]
+
+    #     #     input1 = np.reshape(Gen, (1, input_height, input_width, self.nphases))
+    #     #     input2 = np.reshape(input_image, (1, input_height, input_width, self.nphases))
+
+    #     #     pr = self.denmodel.predict([input1, input2], verbose = False)
+
+    #     #     pr = np.squeeze(pr[0])
+
+    #     #     # print(f'output of prediction each : {pr.shape}')
+    #     #     for pha in range(self.nphases):
+
+    #     #         pred.append(np.squeeze(pr[:, :, pha]))
+
+    #     # predictions_list.append(pred)
+
+    #     predictions_list = pr
+    #     # print(f'predictions_list : {predictions_list.shape}')
+    #     # predictions_list = np.transpose(predictions_list, (0, 2, 3, 1))
+
+    #     # print
+
+    #     image_SR_batch = np.asarray(list_image_SR)
+
+    #     return predictions_list, image_SR_batch

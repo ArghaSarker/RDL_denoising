@@ -16,7 +16,7 @@ cellular and subcellular level with a resolution limit of 200-300 nm. The develo
 
 Achieving high‐quality SIM reconstructions critically depends on acquiring images with a high signal‐to‐noise ratio (SNR). However, several competing factors make this goal difficult to attain in practice. Rapid acquisition rates naturally decrease the average number of photons captured per frame, leading to a lower signal-to-noise ratio (SNR). Increasing excitation intensity to compensate for the risk of concealing information introduces the pitfalls of damaging the samples. Moreover, the intrinsic structural complexity of many biological specimens further degrades SIM performance under low‐SNR conditions, as fine features become obscured by noise.
 
-In this work, we presnet a image denoising and SIM reconstruction based on our Projection Upsampling Network PU-Net , which aims to replace the SIm reconstruction module, DFCAN in the original RDL-SIM approach, as proposed by Qiao et al., 2022.
+In this work, we present an image denoising and SIM reconstruction approach based on our [Projection Upsampling Network (PU-Net)](https://github.com/ArghaSarker/projection_upsampling_network), which aims to replace the SIM reconstruction module, DFCAN, in the original RDL-SIM approach, as proposed by [Qiao et al., 2022](https://www.nature.com/articles/s41587-022-01471-3).
 
 
 
@@ -121,6 +121,8 @@ Qiao, C., & Li, D. (2022). BioSR: a biological image dataset for super-resolutio
 3. Marcel Müller, Viola Mönkemöller, Simon Hennig, Wolfgang Hübner, Thomas Huser (2016).
 "Open-source image reconstruction of super-resolution structured illumination microscopy data in ImageJ",
 Nature Communications, doi: 10.1038/ncomms10980
+
+4. ArghaSarker, no date. GitHub - ArghaSarker/projection_upsampling_network: This is the repository for PU-Net, which is a deep learning based SIM reconstruction network for Structural Illumination Microscopy noisy image data., GitHub. (online: https://github.com/ArghaSarker/projection_upsampling_network).
 
 
 

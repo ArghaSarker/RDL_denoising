@@ -1,4 +1,4 @@
-# RDL-denoising: A Deep Learning Approach Image Denoising for Microscopy
+# RDL-denoising with PU-Net: A Deep Learning Approach Image Denoising for Microscopy
 
 [![License MIT](https://img.shields.io/pypi/l/RDL_denoising.svg?color=green)](https://github.com/ArghaSarker/RDL_denoising/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/RDL_denoising.svg?color=green)](https://pypi.org/project/RDL_denoising)
@@ -23,28 +23,31 @@ In this work, we presnet a image denoising and SIM reconstruction based on our P
 
 Below is an example of a SIM reconstrcution by PU-Net, which is then foprwared RDL-SIM for image denoising.
 
-Step 1:
+**Step 1:**
+
 <div align="center">
     <img src="./images/rdl_PU-Net_SR.png" alt="SIM reconsturuction by PU-Net">
 </div>
 
-Step 2:
+**Step 2:**
 
 <div align="center">
     <img src="./images/rdl_PU-Net_3d.png" alt="PU-Net + RDL denoising">
 </div>
 
-
+<div style="height: 50px;"></div>
 
 
 Below is an example of a SIM reconstrcution by DFCAN, which is then foprwared RDL-SIM for image denoising.
 
-Step 1:
+**Step 1:**
+
 <div align="center">
     <img src="./images/rdl_SIM_SR.png" alt="SIM reconsturuction by DFCAN">
 </div>
 
-Step 2:
+**Step 2:**
+
 <div align="center">
     <img src="./images/rdl_SIM_3d.png" alt="DFCAN+ RDL denoising">
 </div>
@@ -91,7 +94,7 @@ Python 3.7 and above.
 ## 🛡 License
 
 Distributed under the terms of the [MIT] license,
-"projection_upsampling_network" is free and open-source software
+"RDL-denoising with PU-Net" is free and open-source software
 
 ## 🐞 Issues
 

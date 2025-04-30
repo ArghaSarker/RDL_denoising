@@ -1,4 +1,4 @@
-# RDL_denoising
+# RDL-denoising: A Deep Learning Approach Image Denoising for Microscopy
 
 [![License MIT](https://img.shields.io/pypi/l/RDL_denoising.svg?color=green)](https://github.com/ArghaSarker/RDL_denoising/raw/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/RDL_denoising.svg?color=green)](https://pypi.org/project/RDL_denoising)
@@ -7,13 +7,67 @@
 [![codecov](https://codecov.io/gh/ArghaSarker/RDL_denoising/branch/main/graph/badge.svg)](https://codecov.io/gh/ArghaSarker/RDL_denoising)
 
 
-A simple package to use with caped
+## 🗿 Introduction
+
+Fluorescence microscopy is a powerful imaging technique that enables visualization
+of biological specimens at
+cellular and subcellular level with a resolution limit of 200-300 nm. The development of structured illumination microscopy (SIM) has further enhanced resolution by exploiting the interference of light patterns to achieve SIM reconstructions with two times resolution. However, imaging biological specimens under microscopy faces fundamental challenges, such as imaging speed, light exposure, and spatial resolution.
+
+
+Achieving high‐quality SIM reconstructions critically depends on acquiring images with a high signal‐to‐noise ratio (SNR). However, several competing factors make this goal difficult to attain in practice. Rapid acquisition rates naturally decrease the average number of photons captured per frame, leading to a lower signal-to-noise ratio (SNR). Increasing excitation intensity to compensate for the risk of concealing information introduces the pitfalls of damaging the samples. Moreover, the intrinsic structural complexity of many biological specimens further degrades SIM performance under low‐SNR conditions, as fine features become obscured by noise.
+
+In this work, we presnet a image denoising and SIM reconstruction based on our Projection Upsampling Network PU-Net , which aims to replace the SIm reconstruction module, DFCAN in the original RDL-SIM approach, as proposed by Qiao et al., 2022.
+
+
+
+
+Below is an example of a SIM reconstrcution by PU-Net, which is then foprwared RDL-SIM for image denoising.
+
+Step 1:
+<div align="center">
+    <img src="./images/rdl_PU-Net_SR.png" alt="SIM reconsturuction by PU-Net">
+</div>
+
+Step 2:
+
+<div align="center">
+    <img src="./images/rdl_PU-Net_3d.png" alt="PU-Net + RDL denoising">
+</div>
+
+
+
+
+Below is an example of a SIM reconstrcution by DFCAN, which is then foprwared RDL-SIM for image denoising.
+
+Step 1:
+<div align="center">
+    <img src="./images/rdl_SIM_SR.png" alt="SIM reconsturuction by DFCAN">
+</div>
+
+Step 2:
+<div align="center">
+    <img src="./images/rdl_SIM_3d.png" alt="DFCAN+ RDL denoising">
+</div>
+
+
+
+
+
+
+
+<!-- A simple package to use with caped
 
 ----------------------------------
 
-This [caped] package was generated with [Cookiecutter] using [@caped]'s [cookiecutter-template] template.
+This [caped] package was generated with [Cookiecutter] using [@caped]'s [cookiecutter-template] template. -->
 
-
+## 🧾 Content
+- Dataset Generation
+- training example
+    - SR
+    - DN
+- prediction example
+- ImageJ Scripts for FairSIM  reconstruction
 
 ## Installation
 
@@ -28,19 +82,43 @@ To install latest development version :
     pip install git+https://github.com/ArghaSarker/RDL_denoising.git
 
 
-## Contributing
+## ⚠️ Requirement
+Python 3.7 and above.
 
-Contributions are very welcome. Tests can be run with [tox], please ensure
-the coverage at least stays the same before you submit a pull request.
 
-## License
+
+
+## 🛡 License
 
 Distributed under the terms of the [MIT] license,
-"RDL_denoising" is free and open source software
+"projection_upsampling_network" is free and open-source software
 
-## Issues
+## 🐞 Issues
 
-If you encounter any problems, please [file an issue] along with a detailed description.
+If you encounter any bugs or have suggestions for improvements, please open an issue on our repository. Your feedback is appreciated!
+
+
+
+
+
+## 🙏 Acknowledgement
+
+
+
+A huge thanks to [Dr. rer. nat. Varun Kapoor](https://github.com/kapoorlab) for his unwavering support and expert guidance that has been pivotal in shaping this project.
+
+
+## 📚 References
+1. Weigert et al. (2018)
+Weigert, M., Schmidt, U., Boothe, T., Müller, A., Dibrov, A., Jain, A., Wilhelm, B., Schmidt, D., Broaddus, C., Culley, S., Rocha-Martins, M., Segovia-Miranda, F., Norden, C., Henriques, R., Zerial, M., Solimena, M., Rink, J., Tomancak, P., Royer, L., Jug, F., & Myers, E. W. (2018). Content-aware image restoration: pushing the limits of fluorescence microscopy. Nature Methods, 15(12), 1090–1097. https://doi.org/10.1038/s41592-018-0216-7
+
+2. Qiao & Li (2022)
+Qiao, C., & Li, D. (2022). BioSR: a biological image dataset for super-resolution microscopy. figshare. https://doi.org/10.6084/m9.figshare.13264793.v8
+
+3. Marcel Müller, Viola Mönkemöller, Simon Hennig, Wolfgang Hübner, Thomas Huser (2016).
+"Open-source image reconstruction of super-resolution structured illumination microscopy data in ImageJ",
+Nature Communications, doi: 10.1038/ncomms10980
+
 
 
 [pip]: https://pypi.org/project/pip/

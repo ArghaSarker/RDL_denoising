@@ -68,9 +68,21 @@ This [caped] package was generated with [Cookiecutter] using [@caped]'s [cookiec
 - Dataset Generation
 - training example
     - SR
+        - dataget
+        - training dfcan
+        - training PU-Net
+        - prediction dfcan
+        - prediction PU-Net
     - DN
+        - datagen
+        - training dfcan + rdl_sim
+        - training PU-Net + rdl_sim
+        - prediction dfcan + rdl_sim
+        - prediction PU-Net + rdl_sim
+
 - prediction example
 - ImageJ Scripts for FairSIM  reconstruction
+
 
 ## Installation
 
@@ -108,7 +120,7 @@ If you encounter any bugs or have suggestions for improvements, please open an i
 
 
 
-A huge thanks to [Dr. rer. nat. Varun Kapoor](https://github.com/kapoorlab) for his unwavering support and expert guidance that has been pivotal in shaping this project.
+A huge thanks to [Dr. rer. nat. Varun Kapoor](https://github.com/kapoorlab) for his unwavering support and expert guidance that has been pivotal in shaping this codebase.
 
 
 ## 📚 References

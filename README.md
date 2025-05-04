@@ -135,6 +135,9 @@ Qiao, C., & Li, D. (2022). BioSR: a biological image dataset for super-resolutio
 Nature Communications, doi: 10.1038/ncomms10980
 
 4. ArghaSarker, no date. GitHub - ArghaSarker/projection_upsampling_network: This is the repository for PU-Net, which is a deep learning based SIM reconstruction network for Structural Illumination Microscopy noisy image data., GitHub. (online: https://github.com/ArghaSarker/projection_upsampling_network).
+5. Marcel Müller, Viola Mönkemöller, Simon Hennig, Wolfgang Hübner, Thomas Huser (2016).
+"Open-source image reconstruction of super-resolution structured illumination microscopy data in ImageJ",
+Nature Communications, doi: 10.1038/ncomms10980
 
 
 
